@@ -108,6 +108,14 @@ def normalize_language(value):
     return text
 
 
+def same_text(a, b):
+    """True when two lyric lines match ignoring case, punctuation and spacing."""
+    def squash(value):
+        return re.sub(r"[\W_]+", " ", str(value).lower()).strip()
+
+    return squash(a) == squash(b)
+
+
 def short_error(exc, limit=220):
     text = " ".join(str(exc).split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -343,7 +351,7 @@ def transcribe():
         output_lines = []
         for idx, (start_time, text) in enumerate(zip(starts, texts)):
             english_line = translated_lines[idx] if idx < len(translated_lines) else None
-            if english_line:
+            if english_line and not same_text(english_line, text):
                 output_lines.append(f"{format_time(start_time)} _{text}_ → _{english_line}_")
             else:
                 output_lines.append(f"{format_time(start_time)} _{text}_")
