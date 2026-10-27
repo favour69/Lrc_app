@@ -458,6 +458,10 @@
           statusLabel.style.color = '#a55a1d';
           return;
         }
+        if (file.size > 25 * 1024 * 1024) {
+          alert('File is over 25 MB');
+          return;
+        }
 
         resultChip.textContent = 'Working';
         resultChip.style.background = '#fff1d9';

@@ -1,16 +1,17 @@
+import json
 import os
-import tempfile
 
-import whisper
 from flask import Flask, request, jsonify, render_template
-from googletrans import Translator
+from groq import Groq
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # Groq's upload limit is 25 MB
 
-# Load Whisper once - "small" for fast tests, "large-v3" for best quality
-print("Loading Whisper...")
-model = whisper.load_model("small")  # change to "large-v3" for production
-translator = Translator()
+# Set GROQ_API_KEY as an environment variable / secret on your host
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+WHISPER_MODEL = "whisper-large-v3"
+TRANSLATE_MODEL = "llama-3.3-70b-versatile"
 
 
 def format_time(seconds):
@@ -20,6 +21,43 @@ def format_time(seconds):
     return f"[{m:02d}:{s:05.2f}]"
 
 
+def get(seg, key):
+    # Segments may come back as dicts or objects depending on SDK version
+    return seg[key] if isinstance(seg, dict) else getattr(seg, key)
+
+
+def translate_lines(lines):
+    """Translate a list of Spanish lines to English in a single request."""
+    if not lines:
+        return []
+    numbered = json.dumps(lines, ensure_ascii=False)
+    try:
+        resp = client.chat.completions.create(
+            model=TRANSLATE_MODEL,
+            temperature=0.2,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You translate Spanish worship song lyrics into natural, "
+                        "singable English. You receive a JSON array of lines. "
+                        'Reply with JSON only: {"translations": [...]} containing '
+                        "exactly one English string per input line, in the same order."
+                    ),
+                },
+                {"role": "user", "content": numbered},
+            ],
+        )
+        data = json.loads(resp.choices[0].message.content)
+        out = data.get("translations", [])
+        if len(out) == len(lines):
+            return [str(x) for x in out]
+    except Exception:
+        pass
+    return ["(translation failed)"] * len(lines)
+
+
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -27,44 +65,46 @@ def home():
 
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
+    if not os.environ.get("GROQ_API_KEY"):
+        return jsonify({"error": "GROQ_API_KEY is not set on the server"}), 500
     if "audio" not in request.files:
         return jsonify({"error": "No audio file uploaded"}), 400
 
     file = request.files["audio"]
-    suffix = os.path.splitext(file.filename or "")[1] or ".mp3"
-
-    # Save upload to a safe temp file
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        filepath = tmp.name
-        file.save(tmp)
+    audio_bytes = file.read()
+    filename = file.filename or "song.mp3"
 
     try:
-        # 1. Transcribe with timestamps (Spanish)
-        result = model.transcribe(filepath, language="es", word_timestamps=False)
+        # 1. Transcribe with segment timestamps (Spanish)
+        result = client.audio.transcriptions.create(
+            file=(filename, audio_bytes),
+            model=WHISPER_MODEL,
+            language="es",
+            response_format="verbose_json",
+            timestamp_granularities=["segment"],
+        )
+        segments = result.segments if hasattr(result, "segments") else result["segments"]
 
-        output_lines = []
-        for segment in result["segments"]:
-            start = segment["start"]
-            spanish_text = segment["text"].strip()
-            if not spanish_text:
-                continue
+        starts, spanish = [], []
+        for seg in segments:
+            text = get(seg, "text").strip()
+            if text:
+                starts.append(get(seg, "start"))
+                spanish.append(text)
 
-            # 2. Translate to English
-            try:
-                english = translator.translate(spanish_text, src="es", dest="en").text
-            except Exception:
-                english = "(translation failed)"
+        # 2. Translate all lines in one call
+        english = translate_lines(spanish)
 
-            # 3. Custom format
-            output_lines.append(f"{format_time(start)} _{spanish_text}_ → _{english}_")
-
-        return jsonify({"lyrics": "\n".join(output_lines)})
+        # 3. Custom format
+        lines = [
+            f"{format_time(t)} _{es}_ → _{en}_"
+            for t, es, en in zip(starts, spanish, english)
+        ]
+        return jsonify({"lyrics": "\n".join(lines)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    finally:
-        if os.path.exists(filepath):
-            os.remove(filepath)
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
