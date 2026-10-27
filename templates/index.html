@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#2a466f" />
     <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/png" href="/static/icon-192.png" />
     <link rel="apple-touch-icon" href="/static/icon-192.png" />
     <title>Lyrics Transcriber</title>
     <style>
@@ -68,6 +69,15 @@
 
       .shell {
         width: min(980px, 100%);
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      /* Only the lyrics (and any warning text) can be selected, so "Select all" never grabs the whole page. */
+      .result-box,
+      .warning-box {
+        -webkit-user-select: text;
+        user-select: text;
       }
 
       .hero {
