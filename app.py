@@ -85,7 +85,7 @@ def try_translation_batch(batch_lines):
                     {
                         "role": "system",
                         "content": (
-                            "Translate Spanish worship song lyrics into natural, singable English. "
+                            "Translate song lyrics into natural, singable English. "
                             "Return JSON only: {'translations': ['line 1', 'line 2', ...]} with exactly one string per input line in the same order."
                         ),
                     },

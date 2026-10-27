@@ -1,11 +1,11 @@
 # Lrc_app
 
-A Flask web app that accepts a worship song recording, transcribes it in Spanish with Groq Whisper, translates the lyrics to natural English, and returns timestamped output for the user.
+A Flask web app that accepts an audio recording, transcribes it with Groq Whisper, optionally translates the lines to English, and returns timestamped output for the user.
 
 ## Features
 - Audio upload in the browser
 - Groq Whisper transcription with segment timestamps
-- Single-call translation of Spanish lyric lines into English
+- Optional translation of song lines into English
 - Clean, responsive front end for quick use
 - Docker-ready and Render-friendly deployment
 
