@@ -1,61 +1,145 @@
 import json
 import os
+import re
+import tempfile
 
-from flask import Flask, request, jsonify, render_template
-from groq import Groq
+from flask import Flask, request, jsonify, render_template, send_from_directory
+from groq import APIConnectionError, AuthenticationError, Groq, RateLimitError
+from werkzeug.exceptions import RequestEntityTooLarge
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # Groq's upload limit is 25 MB
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
+app.config["JSON_SORT_KEYS"] = False
 
-# Set GROQ_API_KEY as an environment variable / secret on your host
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+api_key = os.environ.get("GROQ_API_KEY")
+client = Groq(api_key=api_key) if api_key else None
 
 WHISPER_MODEL = "whisper-large-v3"
-TRANSLATE_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_TRANSLATE_MODELS = [
+    "openai/gpt-oss-120b",
+    "qwen/qwen3.6-27b",
+    "llama-3.1-8b-instant",
+]
+SUPPORTED_LANGUAGES = [
+    "auto",
+    "es",
+    "en",
+    "sw",
+    "pt",
+    "fr",
+    "de",
+    "it",
+    "ko",
+    "ja",
+    "zh",
+    "ar",
+    "hi",
+]
 
 
 def format_time(seconds):
-    # Converts 65.2 -> [01:05.20]
-    m = int(seconds // 60)
-    s = seconds % 60
-    return f"[{m:02d}:{s:05.2f}]"
+    # Round to centiseconds before converting to clock time so 59.999 -> 01:00.00
+    total_centi = max(0, int(round(float(seconds) * 100)))
+    minutes, remainder = divmod(total_centi, 6000)
+    secs = remainder / 100
+    return f"[{minutes:02d}:{secs:05.2f}]"
 
 
 def get(seg, key):
-    # Segments may come back as dicts or objects depending on SDK version
     return seg[key] if isinstance(seg, dict) else getattr(seg, key)
 
 
+def extract_json_object(text):
+    if not text:
+        return None
+    raw = text.strip()
+    raw = raw.replace("```json", "").replace("```", "").strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    return raw[start : end + 1]
+
+
+def translte_batch(batch_lines):
+    if not batch_lines:
+        return [], None
+
+    env_model = os.environ.get("TRANSLATE_MODEL")
+    models = []
+    if env_model:
+        models.append(env_model)
+    for model in DEFAULT_TRANSLATE_MODELS:
+        if model not in models:
+            models.append(model)
+
+    last_error = None
+    for model in models:
+        try:
+            if client is None:
+                raise RuntimeError("GROQ_API_KEY is not set")
+
+            payload = json.dumps(batch_lines, ensure_ascii=False)
+            response = client.chat.completions.create(
+                model=model,
+                temperature=0.2,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Translate Spanish worship song lyrics into natural, singable English. "
+                            "Return JSON only: {'translations': ['line 1', 'line 2', ...]} with exactly one string per input line in the same order."
+                        ),
+                    },
+                    {"role": "user", "content": payload},
+                ],
+            )
+            content = response.choices[0].message.content or ""
+            json_text = extract_json_object(content)
+            if json_text is None:
+                raise ValueError("No JSON object found in model reply")
+            data = json.loads(json_text)
+            translations = data.get("translations", [])
+            if not isinstance(translations, list) or len(translations) != len(batch_lines):
+                raise ValueError(
+                    f"Expected {len(batch_lines)} translations but got {len(translations) if isinstance(translations, list) else 'non-list'}"
+                )
+            return [str(item) for item in translations], None
+        except Exception as exc:  # pragma: no cover - defensive logging
+            last_error = str(exc)
+            app.logger.warning("Translation attempt failed for model %s: %s", model, exc)
+
+    return ["(translation failed)"] * len(batch_lines), last_error or "translation failed"
+
+
 def translate_lines(lines):
-    """Translate a list of Spanish lines to English in a single request."""
     if not lines:
-        return []
-    numbered = json.dumps(lines, ensure_ascii=False)
-    try:
-        resp = client.chat.completions.create(
-            model=TRANSLATE_MODEL,
-            temperature=0.2,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You translate Spanish worship song lyrics into natural, "
-                        "singable English. You receive a JSON array of lines. "
-                        'Reply with JSON only: {"translations": [...]} containing '
-                        "exactly one English string per input line, in the same order."
-                    ),
-                },
-                {"role": "user", "content": numbered},
-            ],
-        )
-        data = json.loads(resp.choices[0].message.content)
-        out = data.get("translations", [])
-        if len(out) == len(lines):
-            return [str(x) for x in out]
-    except Exception:
-        pass
-    return ["(translation failed)"] * len(lines)
+        return [], None
+
+    translated = []
+    warnings = []
+
+    for i in range(0, len(lines), 40):
+        batch = lines[i : i + 40]
+        batch_result, failure_reason = translte_batch(batch)
+        translated.extend(batch_result)
+        if failure_reason:
+            warnings.append(failure_reason)
+
+    return translated, "; ".join(warnings) if warnings else None
+
+
+@app.route("/manifest.json")
+def manifest():
+    return send_from_directory("static", "manifest.json")
+
+
+@app.route("/sw.js")
+def service_worker():
+    response = send_from_directory("static", "sw.js")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.route("/")
@@ -67,44 +151,81 @@ def home():
 def transcribe():
     if not os.environ.get("GROQ_API_KEY"):
         return jsonify({"error": "GROQ_API_KEY is not set on the server"}), 500
+
     if "audio" not in request.files:
         return jsonify({"error": "No audio file uploaded"}), 400
+
+    language_choice = (request.form.get("language") or "auto").strip().lower()
+    if language_choice not in SUPPORTED_LANGUAGES:
+        language_choice = "auto"
 
     file = request.files["audio"]
     audio_bytes = file.read()
     filename = file.filename or "song.mp3"
 
     try:
-        # 1. Transcribe with segment timestamps (Spanish)
-        result = client.audio.transcriptions.create(
-            file=(filename, audio_bytes),
-            model=WHISPER_MODEL,
-            language="es",
-            response_format="verbose_json",
-            timestamp_granularities=["segment"],
-        )
-        segments = result.segments if hasattr(result, "segments") else result["segments"]
+        request_kwargs = {
+            "file": (filename, audio_bytes),
+            "model": WHISPER_MODEL,
+            "response_format": "verbose_json",
+            "timestamp_granularities": ["segment"],
+        }
+        if language_choice != "auto":
+            request_kwargs["language"] = language_choice
 
-        starts, spanish = [], []
+        result = client.audio.transcriptions.create(**request_kwargs)
+        segments = result.segments if hasattr(result, "segments") else result.get("segments", [])
+        detected_language = getattr(result, "language", None)
+        if isinstance(result, dict):
+            detected_language = result.get("language") or detected_language
+
+        if not segments:
+            return jsonify({"error": "No speech detected in the uploaded audio."}), 422
+
+        starts, texts = [], []
         for seg in segments:
-            text = get(seg, "text").strip()
+            text = str(get(seg, "text")).strip()
             if text:
-                starts.append(get(seg, "start"))
-                spanish.append(text)
+                starts.append(float(get(seg, "start")))
+                texts.append(text)
 
-        # 2. Translate all lines in one call
-        english = translate_lines(spanish)
+        if not texts:
+            return jsonify({"error": "No speech detected in the uploaded audio."}), 422
 
-        # 3. Custom format
-        lines = [
-            f"{format_time(t)} _{es}_ → _{en}_"
-            for t, es, en in zip(starts, spanish, english)
-        ]
-        return jsonify({"lyrics": "\n".join(lines)})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        if detected_language == "en" or language_choice == "en":
+            translated = [None] * len(texts)
+            warning = None
+            lines = [
+                f"{format_time(t)} _{text}_" if translated[idx] is None else f"{format_time(t)} _{text}_ → _{translated[idx]}_"
+                for idx, (t, text) in enumerate(zip(starts, texts))
+            ]
+            return jsonify({"lyrics": "\n".join(lines), "warning": warning})
+
+        translated_lines, warning = translate_lines(texts)
+        output_lines = []
+        for idx, (start_time, text) in enumerate(zip(starts, texts)):
+            english_line = translated_lines[idx] if idx < len(translated_lines) else "(translation failed)"
+            output_lines.append(f"{format_time(start_time)} _{text}_ → _{english_line}_")
+
+        payload = {"lyrics": "\n".join(output_lines)}
+        if warning:
+            payload["warning"] = warning
+        return jsonify(payload)
+    except RateLimitError as exc:
+        app.logger.warning("Groq rate limit reached: %s", exc)
+        return jsonify({"error": "usage limit reached, try again later"}), 429
+    except AuthenticationError as exc:
+        app.logger.warning("Groq auth error: %s", exc)
+        return jsonify({"error": "Invalid Groq API key."}), 401
+    except APIConnectionError as exc:
+        app.logger.warning("Groq connection error: %s", exc)
+        return jsonify({"error": "Could not reach the Groq API. Please try again later."}), 502
+    except RequestEntityTooLarge:
+        return jsonify({"error": "File is over 25 MB."}), 413
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 7860))
     app.run(host="0.0.0.0", port=port, debug=False)

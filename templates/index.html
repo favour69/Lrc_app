@@ -3,6 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#2a466f" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/static/icon-192.png" />
     <title>Worship Lyrics Transcriber</title>
     <style>
       :root {
@@ -21,6 +24,26 @@
         --warning: #b26a1d;
         --warning-soft: #f9ead6;
         --shadow: 0 20px 45px rgba(24, 30, 40, 0.08);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101722;
+          --bg-strong: #141f2d;
+          --panel: rgba(19, 26, 34, 0.82);
+          --panel-strong: #172231;
+          --border: rgba(255, 255, 255, 0.08);
+          --text: #eef3fb;
+          --muted: #b3bfd4;
+          --accent: #98bcff;
+          --accent-strong: #dfeafc;
+          --accent-soft: rgba(152, 188, 255, 0.14);
+          --success: #86d7ba;
+          --success-soft: rgba(134, 215, 186, 0.14);
+          --warning: #f3b86d;
+          --warning-soft: rgba(243, 184, 109, 0.12);
+          --shadow: 0 18px 42px rgba(0, 0, 0, 0.35);
+        }
       }
 
       * { box-sizing: border-box; }
@@ -54,6 +77,12 @@
         box-shadow: var(--shadow);
         overflow: hidden;
         backdrop-filter: blur(12px);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .hero {
+          background: rgba(18, 25, 34, 0.7);
+        }
       }
 
       .topbar {
@@ -148,6 +177,12 @@
         padding: 18px;
       }
 
+      @media (prefers-color-scheme: dark) {
+        .upload-card {
+          background: linear-gradient(180deg, rgba(21, 31, 42, 0.8), rgba(18, 25, 34, 0.9));
+        }
+      }
+
       .upload-box {
         position: relative;
         display: flex;
@@ -196,6 +231,30 @@
         color: var(--muted);
       }
 
+      .language-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 18px;
+        flex-wrap: wrap;
+      }
+
+      .language-row label {
+        font-size: 0.82rem;
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .language-row select {
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.7);
+        padding: 0.75rem 0.9rem;
+        font-size: 0.92rem;
+        color: var(--text);
+        min-width: 180px;
+      }
+
       input[type="file"] {
         position: absolute;
         inset: 0;
@@ -223,6 +282,12 @@
 
       button:hover {
         transform: translateY(-1px);
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
       }
 
       .primary-button {
@@ -269,6 +334,12 @@
         min-height: 260px;
       }
 
+      @media (prefers-color-scheme: dark) {
+        .result-panel {
+          background: linear-gradient(180deg, rgba(20, 29, 39, 0.8), rgba(17, 24, 32, 0.92));
+        }
+      }
+
       .result-header {
         display: flex;
         justify-content: space-between;
@@ -305,6 +376,22 @@
         background: currentColor;
       }
 
+      .warning-box {
+        display: none;
+        margin-bottom: 12px;
+        padding: 0.8rem 0.9rem;
+        border-radius: 12px;
+        background: var(--warning-soft);
+        color: var(--warning);
+        border: 1px solid rgba(178, 106, 29, 0.12);
+        font-size: 0.9rem;
+        line-height: 1.5;
+      }
+
+      .warning-box.visible {
+        display: block;
+      }
+
       .result-box {
         margin: 0;
         min-height: 180px;
@@ -317,6 +404,26 @@
         line-height: 1.7;
         font-size: 0.96rem;
         overflow: auto;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .result-box {
+          background: rgba(16, 24, 33, 0.9);
+        }
+      }
+
+      .result-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+      }
+
+      .small-button {
+        padding: 0.65rem 0.8rem;
+        background: rgba(255,255,255,0.45);
+        color: var(--text);
+        border: 1px solid var(--border);
       }
 
       .skeleton {
@@ -356,6 +463,11 @@
           flex-direction: column;
           align-items: flex-start;
         }
+
+        .language-row {
+          flex-direction: column;
+          align-items: flex-start;
+        }
       }
     </style>
   </head>
@@ -389,8 +501,27 @@
                 </div>
               </label>
 
+              <div class="language-row">
+                <label for="languageSelect">Song language</label>
+                <select id="languageSelect">
+                  <option value="auto">Auto-detect</option>
+                  <option value="es">Spanish</option>
+                  <option value="en">English</option>
+                  <option value="sw">Swahili</option>
+                  <option value="pt">Portuguese</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="it">Italian</option>
+                  <option value="ko">Korean</option>
+                  <option value="ja">Japanese</option>
+                  <option value="zh">Chinese</option>
+                  <option value="ar">Arabic</option>
+                  <option value="hi">Hindi</option>
+                </select>
+              </div>
+
               <div class="actions">
-                <button class="primary-button" type="button" onclick="upload()">Transcribe now</button>
+                <button class="primary-button" id="transcribeBtn" type="button" onclick="upload()">Transcribe now</button>
                 <button class="ghost-button" type="button" onclick="document.getElementById('audio').click()">Select file</button>
                 <span class="status" id="statusLabel">Waiting for recording</span>
               </div>
@@ -404,7 +535,14 @@
                 <div class="result-chip" id="resultChip">Ready</div>
               </div>
 
+              <div id="warningBox" class="warning-box" aria-live="polite"></div>
               <pre id="result" class="result-box">No lyrics yet. Upload a song to begin.</pre>
+
+              <div class="result-actions">
+                <button class="small-button" type="button" onclick="selectAllLyrics()">Select all</button>
+                <button class="small-button" type="button" onclick="copyLyrics()">Copy</button>
+                <button class="small-button" type="button" onclick="downloadLyrics()">Download .txt</button>
+              </div>
             </div>
           </aside>
         </div>
@@ -417,11 +555,109 @@
       const resultEl = document.getElementById('result');
       const statusLabel = document.getElementById('statusLabel');
       const resultChip = document.getElementById('resultChip');
+      const transcribeBtn = document.getElementById('transcribeBtn');
+      const languageSelect = document.getElementById('languageSelect');
+      const warningBox = document.getElementById('warningBox');
+
+      function clearWarning() {
+        warningBox.textContent = '';
+        warningBox.classList.remove('visible');
+      }
+
+      function updateStatus(message, tone) {
+        statusLabel.textContent = message;
+        if (tone === 'warning') {
+          statusLabel.style.background = '#f9ead6';
+          statusLabel.style.color = '#aa5b27';
+        } else if (tone === 'success') {
+          statusLabel.style.background = '#dff6ee';
+          statusLabel.style.color = '#2d7a5f';
+        } else if (tone === 'error') {
+          statusLabel.style.background = '#ffe8e3';
+          statusLabel.style.color = '#b54d4d';
+        } else {
+          statusLabel.style.background = '#f9ead6';
+          statusLabel.style.color = '#9d5d15';
+        }
+      }
+
+      function setBusy(isBusy) {
+        transcribeBtn.disabled = isBusy;
+      }
+
+      function selectLyricsRange() {
+        const text = resultEl.textContent.trim();
+        if (!text || text === 'No lyrics yet. Upload a song to begin.') {
+          return;
+        }
+
+        const range = document.createRange();
+        range.selectNodeContents(resultEl);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+
+      function selectAllLyrics() {
+        selectLyricsRange();
+      }
+
+      function copyLyrics() {
+        const text = resultEl.textContent.trim();
+        if (!text || text === 'No lyrics yet. Upload a song to begin.') {
+          return;
+        }
+
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(() => {
+            updateStatus('Copied', 'success');
+          }).catch(() => {
+            fallbackCopy();
+          });
+          return;
+        }
+
+        fallbackCopy();
+      }
+
+      function fallbackCopy() {
+        const text = resultEl.textContent;
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+          document.execCommand('copy');
+          updateStatus('Copied', 'success');
+        } catch (error) {
+          updateStatus('Copy failed', 'error');
+        }
+        document.body.removeChild(textarea);
+      }
+
+      function downloadLyrics() {
+        const text = resultEl.textContent.trim();
+        if (!text || text === 'No lyrics yet. Upload a song to begin.') {
+          return;
+        }
+
+        const filename = (fileInput.files && fileInput.files[0] && fileInput.files[0].name)
+          ? fileInput.files[0].name.replace(/\.[^.]+$/, '') + '.txt'
+          : 'lyrics.txt';
+
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
 
       fileInput.addEventListener('change', () => {
         const file = fileInput.files && fileInput.files[0];
         if (file) {
-          statusLabel.textContent = file.name;
+          updateStatus(file.name, 'default');
           resultChip.textContent = 'Selected';
           resultChip.style.background = '#edf7ff';
           resultChip.style.color = '#2d5d8c';
@@ -450,19 +686,35 @@
         }
       });
 
+      document.addEventListener('keydown', (event) => {
+        const tag = document.activeElement && document.activeElement.tagName;
+        const isTextField = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement.isContentEditable;
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a' && !isTextField) {
+          event.preventDefault();
+          selectAllLyrics();
+        }
+      });
+
+      window.addEventListener('load', () => {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        }
+      });
+
       async function upload() {
         const file = fileInput.files && fileInput.files[0];
         if (!file) {
-          statusLabel.textContent = 'Select a file first';
-          statusLabel.style.background = '#fbe9d7';
-          statusLabel.style.color = '#a55a1d';
+          updateStatus('Select a file first', 'warning');
           return;
         }
+
         if (file.size > 25 * 1024 * 1024) {
           alert('File is over 25 MB');
           return;
         }
 
+        clearWarning();
+        setBusy(true);
         resultChip.textContent = 'Working';
         resultChip.style.background = '#fff1d9';
         resultChip.style.color = '#a8631a';
@@ -478,40 +730,43 @@
           </div>
         `;
 
-        statusLabel.textContent = 'Transcribing...';
-        statusLabel.style.background = '#f6eadc';
-        statusLabel.style.color = '#9d5d15';
+        updateStatus('Transcribing...', 'default');
 
         const form = new FormData();
         form.append('audio', file);
+        form.append('language', languageSelect.value || 'auto');
 
         try {
-          const res = await fetch('/transcribe', {
+          const response = await fetch('/transcribe', {
             method: 'POST',
-            body: form
+            body: form,
           });
+          const data = await response.json();
 
-          const data = await res.json();
-
-          if (!res.ok) {
+          if (!response.ok) {
             throw new Error(data.error || 'Request failed');
           }
 
           resultEl.textContent = data.lyrics || data.error || 'No result';
-          statusLabel.textContent = 'Complete';
-          statusLabel.style.background = '#dff6ee';
-          statusLabel.style.color = '#2d7a5f';
+          if (data.warning) {
+            warningBox.textContent = `Warning: ${data.warning}`;
+            warningBox.classList.add('visible');
+          } else {
+            clearWarning();
+          }
+
+          updateStatus('Complete', 'success');
           resultChip.textContent = 'Ready';
           resultChip.style.background = '#dff6ee';
           resultChip.style.color = '#2d7a5f';
-        } catch (e) {
-          resultEl.textContent = 'Error: ' + e.message;
-          statusLabel.textContent = 'Try another file';
-          statusLabel.style.background = '#f9ead6';
-          statusLabel.style.color = '#aa5b27';
+        } catch (error) {
+          resultEl.textContent = 'Error: ' + error.message;
+          updateStatus('Try another file', 'error');
           resultChip.textContent = 'Error';
           resultChip.style.background = '#ffe8e3';
           resultChip.style.color = '#b54d4d';
+        } finally {
+          setBusy(false);
         }
       }
     </script>
