@@ -1,32 +1,515 @@
 <!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lyrics Transcriber MVP</title>
-</head>
-<body style="font-family: sans-serif; padding: 20px;">
-  <h2>Upload Worship Song -> Get Lyrics</h2>
-  <input type="file" id="audio" accept="audio/*">
-  <button onclick="upload()">Transcribe</button>
-  <pre id="result" style="background:#f5f5f5; padding:15px; white-space: pre-wrap; margin-top:20px;"></pre>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Worship Lyrics Transcriber</title>
+    <style>
+      :root {
+        --bg: #f5f1ea;
+        --bg-strong: #efe6dc;
+        --panel: rgba(255, 255, 255, 0.7);
+        --panel-strong: #fffdfb;
+        --border: rgba(25, 28, 35, 0.08);
+        --text: #1d2430;
+        --muted: #5f6776;
+        --accent: #4a6fa5;
+        --accent-strong: #2a466f;
+        --accent-soft: #dfeafc;
+        --success: #2d7a5f;
+        --success-soft: #dff6ee;
+        --warning: #b26a1d;
+        --warning-soft: #f9ead6;
+        --shadow: 0 20px 45px rgba(24, 30, 40, 0.08);
+      }
 
-<script>
-async function upload(){
-  const file = document.getElementById('audio').files[0];
-  if(!file) return alert("Select file");
-  const out = document.getElementById('result');
-  out.innerText = "Transcribing... please wait...";
-  const form = new FormData();
-  form.append('audio', file);
-  try {
-    const res = await fetch('/transcribe', {method:'POST', body: form});
-    const data = await res.json();
-    out.innerText = data.lyrics || data.error || "No result";
-  } catch (e) {
-    out.innerText = "Error: " + e;
-  }
-}
-</script>
-</body>
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(127, 157, 221, 0.14), transparent 26%),
+          radial-gradient(circle at bottom right, rgba(130, 187, 164, 0.15), transparent 30%),
+          var(--bg);
+        color: var(--text);
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 20px;
+      }
+
+      .shell {
+        width: min(980px, 100%);
+      }
+
+      .hero {
+        background: rgba(255,255,255,0.55);
+        border: 1px solid var(--border);
+        border-radius: 32px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        backdrop-filter: blur(12px);
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 22px 28px 18px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--accent-strong);
+        font-size: 0.8rem;
+      }
+
+      .brand-mark {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #dfeafc, #bccfe9);
+        color: var(--accent-strong);
+        font-size: 1rem;
+        box-shadow: inset 0 1px rgba(255,255,255,0.7);
+      }
+
+      .lintel {
+        color: var(--muted);
+        font-size: 0.8rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 999px;
+        background: rgba(74,111,165,0.08);
+        border: 1px solid rgba(74,111,165,0.08);
+      }
+
+      .content {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 0;
+      }
+
+      .left-panel,
+      .right-panel {
+        padding: 30px 28px 28px;
+      }
+
+      .left-panel {
+        border-right: 1px solid var(--border);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.5rem 0.8rem;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 18px 0 12px;
+        font-size: clamp(2.2rem, 4vw, 4rem);
+        line-height: 1.02;
+        letter-spacing: -0.06em;
+      }
+
+      .lead {
+        max-width: 580px;
+        font-size: 1.02rem;
+        line-height: 1.7;
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+
+      .upload-card {
+        background: linear-gradient(180deg, rgba(255,255,255,0.76), rgba(248,245,241,0.9));
+        border: 1px solid rgba(25, 28, 35, 0.08);
+        border-radius: 22px;
+        padding: 18px;
+      }
+
+      .upload-box {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 160px;
+        border: 1.5px dashed rgba(42, 70, 111, 0.28);
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(223, 234, 252, 0.45), rgba(255,255,255,0.2));
+        padding: 22px;
+        text-align: center;
+        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .upload-box.dragover {
+        transform: translateY(-2px);
+        border-color: rgba(42, 70, 111, 0.5);
+        box-shadow: inset 0 0 0 1px rgba(42, 70, 111, 0.12);
+      }
+
+      .upload-content {
+        z-index: 1;
+      }
+
+      .upload-icon {
+        width: 54px;
+        height: 54px;
+        margin: 0 auto 12px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        background: rgba(74,111,165,0.1);
+        color: var(--accent-strong);
+        font-size: 1.5rem;
+      }
+
+      .upload-title {
+        margin: 6px 0 6px;
+        font-size: 1.05rem;
+        font-weight: 700;
+      }
+
+      .upload-sub {
+        margin: 0;
+        font-size: 0.88rem;
+        color: var(--muted);
+      }
+
+      input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 18px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        border-radius: 14px;
+        font-weight: 700;
+        font-size: 0.96rem;
+        transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      .primary-button {
+        padding: 0.9rem 1.3rem;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: white;
+        box-shadow: 0 10px 20px rgba(42, 70, 111, 0.2);
+      }
+
+      .ghost-button {
+        padding: 0.82rem 1.1rem;
+        background: rgba(255,255,255,0.5);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0.55rem 0.8rem;
+        border-radius: 999px;
+        background: var(--warning-soft);
+        color: var(--warning);
+        font-size: 0.79rem;
+        font-weight: 600;
+      }
+
+      .status::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+        display: inline-block;
+        opacity: 0.85;
+      }
+
+      .result-panel {
+        padding: 18px;
+        border-radius: 22px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(247,245,242,0.9));
+        border: 1px solid var(--border);
+        min-height: 260px;
+      }
+
+      .result-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 12px;
+      }
+
+      .result-title {
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .result-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0.5rem 0.7rem;
+        border-radius: 999px;
+        background: var(--success-soft);
+        color: var(--success);
+        font-size: 0.74rem;
+        font-weight: 700;
+      }
+
+      .result-chip::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      .result-box {
+        margin: 0;
+        min-height: 180px;
+        padding: 18px 16px;
+        background: #f8f7f3;
+        border: 1px solid rgba(25, 28, 35, 0.06);
+        border-radius: 16px;
+        color: var(--text);
+        white-space: pre-wrap;
+        line-height: 1.7;
+        font-size: 0.96rem;
+        overflow: auto;
+      }
+
+      .skeleton {
+        display: grid;
+        gap: 10px;
+        padding: 10px 0 0;
+      }
+
+      .line {
+        height: 12px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(193, 202, 214, 0.6), rgba(234, 236, 239, 0.9), rgba(193, 202, 214, 0.6));
+        background-size: 200% 100%;
+        animation: shimmer 1.3s linear infinite;
+      }
+
+      .line.short { width: 40%; }
+      .line.medium { width: 65%; }
+      .line.long { width: 85%; }
+
+      @keyframes shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+
+      @media (max-width: 760px) {
+        .content {
+          grid-template-columns: 1fr;
+        }
+
+        .left-panel {
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+
+        .topbar {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="hero">
+        <div class="topbar">
+          <div class="brand">
+            <div class="brand-mark">♪</div>
+            <span>Worship Lyrics</span>
+          </div>
+          <div class="lintel">Spanish → English</div>
+        </div>
+
+        <div class="content">
+          <section class="left-panel">
+            <div class="eyebrow">Audio to Lyrics</div>
+            <h1>Turn a worship song into clear, readable lyrics.</h1>
+            <p class="lead">
+              Upload a recording, let the transcription run, and get a clean verse-by-verse draft
+              with timestamps and English translation.
+            </p>
+
+            <div class="upload-card">
+              <label class="upload-box" id="uploadBox">
+                <input type="file" id="audio" accept="audio/*" />
+                <div class="upload-content">
+                  <div class="upload-icon">♫</div>
+                  <p class="upload-title">Choose an audio file</p>
+                  <p class="upload-sub">MP3, WAV, M4A, and other common formats</p>
+                </div>
+              </label>
+
+              <div class="actions">
+                <button class="primary-button" type="button" onclick="upload()">Transcribe now</button>
+                <button class="ghost-button" type="button" onclick="document.getElementById('audio').click()">Select file</button>
+                <span class="status" id="statusLabel">Waiting for recording</span>
+              </div>
+            </div>
+          </section>
+
+          <aside class="right-panel">
+            <div class="result-panel">
+              <div class="result-header">
+                <div class="result-title">Generated lyrics</div>
+                <div class="result-chip" id="resultChip">Ready</div>
+              </div>
+
+              <pre id="result" class="result-box">No lyrics yet. Upload a song to begin.</pre>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const fileInput = document.getElementById('audio');
+      const uploadBox = document.getElementById('uploadBox');
+      const resultEl = document.getElementById('result');
+      const statusLabel = document.getElementById('statusLabel');
+      const resultChip = document.getElementById('resultChip');
+
+      fileInput.addEventListener('change', () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (file) {
+          statusLabel.textContent = file.name;
+          resultChip.textContent = 'Selected';
+          resultChip.style.background = '#edf7ff';
+          resultChip.style.color = '#2d5d8c';
+        }
+      });
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        uploadBox.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          uploadBox.classList.add('dragover');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        uploadBox.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          uploadBox.classList.remove('dragover');
+        });
+      });
+
+      uploadBox.addEventListener('drop', (event) => {
+        const files = event.dataTransfer.files;
+        if (files && files.length) {
+          fileInput.files = files;
+          fileInput.dispatchEvent(new Event('change'));
+        }
+      });
+
+      async function upload() {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          statusLabel.textContent = 'Select a file first';
+          statusLabel.style.background = '#fbe9d7';
+          statusLabel.style.color = '#a55a1d';
+          return;
+        }
+
+        resultChip.textContent = 'Working';
+        resultChip.style.background = '#fff1d9';
+        resultChip.style.color = '#a8631a';
+
+        resultEl.textContent = '';
+        resultEl.innerHTML = `
+          <div class="skeleton">
+            <div class="line long"></div>
+            <div class="line medium"></div>
+            <div class="line short"></div>
+            <div class="line long"></div>
+            <div class="line medium"></div>
+          </div>
+        `;
+
+        statusLabel.textContent = 'Transcribing...';
+        statusLabel.style.background = '#f6eadc';
+        statusLabel.style.color = '#9d5d15';
+
+        const form = new FormData();
+        form.append('audio', file);
+
+        try {
+          const res = await fetch('/transcribe', {
+            method: 'POST',
+            body: form
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data.error || 'Request failed');
+          }
+
+          resultEl.textContent = data.lyrics || data.error || 'No result';
+          statusLabel.textContent = 'Complete';
+          statusLabel.style.background = '#dff6ee';
+          statusLabel.style.color = '#2d7a5f';
+          resultChip.textContent = 'Ready';
+          resultChip.style.background = '#dff6ee';
+          resultChip.style.color = '#2d7a5f';
+        } catch (e) {
+          resultEl.textContent = 'Error: ' + e.message;
+          statusLabel.textContent = 'Try another file';
+          statusLabel.style.background = '#f9ead6';
+          statusLabel.style.color = '#aa5b27';
+          resultChip.textContent = 'Error';
+          resultChip.style.background = '#ffe8e3';
+          resultChip.style.color = '#b54d4d';
+        }
+      }
+    </script>
+  </body>
 </html>
