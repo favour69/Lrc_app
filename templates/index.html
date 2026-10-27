@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lyrics Transcriber MVP</title>
+</head>
+<body style="font-family: sans-serif; padding: 20px;">
+  <h2>Upload Worship Song -> Get Lyrics</h2>
+  <input type="file" id="audio" accept="audio/*">
+  <button onclick="upload()">Transcribe</button>
+  <pre id="result" style="background:#f5f5f5; padding:15px; white-space: pre-wrap; margin-top:20px;"></pre>
+
+<script>
+async function upload(){
+  const file = document.getElementById('audio').files[0];
+  if(!file) return alert("Select file");
+  const out = document.getElementById('result');
+  out.innerText = "Transcribing... please wait...";
+  const form = new FormData();
+  form.append('audio', file);
+  try {
+    const res = await fetch('/transcribe', {method:'POST', body: form});
+    const data = await res.json();
+    out.innerText = data.lyrics || data.error || "No result";
+  } catch (e) {
+    out.innerText = "Error: " + e;
+  }
+}
+</script>
+</body>
+</html>
