@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: lrc-app
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
