@@ -1,7 +1,5 @@
 import json
 import os
-import re
-import tempfile
 
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from groq import APIConnectionError, AuthenticationError, Groq, RateLimitError
@@ -38,30 +36,30 @@ SUPPORTED_LANGUAGES = [
 
 
 def format_time(seconds):
-    # Round to centiseconds before converting to clock time so 59.999 -> 01:00.00
     total_centi = max(0, int(round(float(seconds) * 100)))
     minutes, remainder = divmod(total_centi, 6000)
     secs = remainder / 100
     return f"[{minutes:02d}:{secs:05.2f}]"
 
 
-def get(seg, key):
-    return seg[key] if isinstance(seg, dict) else getattr(seg, key)
+def get(seg, key, default=""):
+    if isinstance(seg, dict):
+        return seg.get(key, default)
+    return getattr(seg, key, default)
 
 
 def extract_json_object(text):
     if not text:
         return None
-    raw = text.strip()
-    raw = raw.replace("```json", "").replace("```", "").strip()
-    start = raw.find("{")
-    end = raw.rfind("}")
+    cleaned = text.strip().replace("```json", "").replace("```", "").strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
     if start == -1 or end == -1 or end <= start:
         return None
-    return raw[start : end + 1]
+    return cleaned[start : end + 1]
 
 
-def translte_batch(batch_lines):
+def try_translation_batch(batch_lines):
     if not batch_lines:
         return [], None
 
@@ -73,7 +71,7 @@ def translte_batch(batch_lines):
         if model not in models:
             models.append(model)
 
-    last_error = None
+    last_reason = None
     for model in models:
         try:
             if client is None:
@@ -94,22 +92,24 @@ def translte_batch(batch_lines):
                     {"role": "user", "content": payload},
                 ],
             )
-            content = response.choices[0].message.content or ""
+            content = getattr(response.choices[0].message, "content", "") or ""
             json_text = extract_json_object(content)
             if json_text is None:
                 raise ValueError("No JSON object found in model reply")
+
             data = json.loads(json_text)
             translations = data.get("translations", [])
             if not isinstance(translations, list) or len(translations) != len(batch_lines):
                 raise ValueError(
                     f"Expected {len(batch_lines)} translations but got {len(translations) if isinstance(translations, list) else 'non-list'}"
                 )
+
             return [str(item) for item in translations], None
-        except Exception as exc:  # pragma: no cover - defensive logging
-            last_error = str(exc)
+        except Exception as exc:
+            last_reason = str(exc)
             app.logger.warning("Translation attempt failed for model %s: %s", model, exc)
 
-    return ["(translation failed)"] * len(batch_lines), last_error or "translation failed"
+    return ["(translation failed)"] * len(batch_lines), last_reason or "translation failed"
 
 
 def translate_lines(lines):
@@ -121,8 +121,8 @@ def translate_lines(lines):
 
     for i in range(0, len(lines), 40):
         batch = lines[i : i + 40]
-        batch_result, failure_reason = translte_batch(batch)
-        translated.extend(batch_result)
+        translations, failure_reason = try_translation_batch(batch)
+        translated.extend(translations)
         if failure_reason:
             warnings.append(failure_reason)
 
@@ -174,7 +174,7 @@ def transcribe():
             request_kwargs["language"] = language_choice
 
         result = client.audio.transcriptions.create(**request_kwargs)
-        segments = result.segments if hasattr(result, "segments") else result.get("segments", [])
+        segments = result.segments if hasattr(result, "segments") else getattr(result, "segments", [])
         detected_language = getattr(result, "language", None)
         if isinstance(result, dict):
             detected_language = result.get("language") or detected_language
@@ -182,24 +182,20 @@ def transcribe():
         if not segments:
             return jsonify({"error": "No speech detected in the uploaded audio."}), 422
 
-        starts, texts = [], []
+        starts = []
+        texts = []
         for seg in segments:
-            text = str(get(seg, "text")).strip()
+            text = str(get(seg, "text", "")).strip()
             if text:
-                starts.append(float(get(seg, "start")))
+                starts.append(float(get(seg, "start", 0.0)))
                 texts.append(text)
 
         if not texts:
             return jsonify({"error": "No speech detected in the uploaded audio."}), 422
 
         if detected_language == "en" or language_choice == "en":
-            translated = [None] * len(texts)
-            warning = None
-            lines = [
-                f"{format_time(t)} _{text}_" if translated[idx] is None else f"{format_time(t)} _{text}_ → _{translated[idx]}_"
-                for idx, (t, text) in enumerate(zip(starts, texts))
-            ]
-            return jsonify({"lyrics": "\n".join(lines), "warning": warning})
+            lyrics = "\n".join(f"{format_time(start)} _{text}_" for start, text in zip(starts, texts))
+            return jsonify({"lyrics": lyrics})
 
         translated_lines, warning = translate_lines(texts)
         output_lines = []
