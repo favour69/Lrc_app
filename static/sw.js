@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lrc-app-v3';
+const CACHE_NAME = 'lrc-app-v4';
 const APP_SHELL = ['/'];
 
 self.addEventListener('install', (event) => {

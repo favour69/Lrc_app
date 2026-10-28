@@ -8,6 +8,14 @@
     <link rel="icon" type="image/png" href="/static/icon-192.png" />
     <link rel="apple-touch-icon" href="/static/icon-192.png" />
     <title>Lyrics Transcriber</title>
+    <script>
+      // Mark the page when it is running as the installed app (not in a normal browser tab).
+      try {
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+          document.documentElement.classList.add('is-app');
+        }
+      } catch (e) {}
+    </script>
     <style>
       :root {
         --bg: #f5f1ea;
@@ -499,7 +507,7 @@
         position: fixed;
         inset: 0;
         z-index: 1000;
-        display: flex;
+        display: none; /* only shown in the installed app, see .is-app below */
         flex-direction: column;
         align-items: center;
         justify-content: center;
@@ -509,6 +517,13 @@
           radial-gradient(circle at bottom right, rgba(130, 187, 164, 0.15), transparent 30%),
           var(--bg);
         transition: opacity 0.45s ease, visibility 0.45s ease;
+      }
+
+      .is-app .splash {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
       }
 
       .splash.hide {
