@@ -44,7 +44,6 @@ EXCLUDED_MODEL_MARKERS = (
 )
 
 SUPPORTED_LANGUAGES = [
-    "auto",
     "es",
     "en",
     "sw",
@@ -320,9 +319,9 @@ def transcribe():
     if "audio" not in request.files:
         return jsonify({"error": "No audio file uploaded"}), 400
 
-    language_choice = (request.form.get("language") or "auto").strip().lower()
+    language_choice = (request.form.get("language") or "").strip().lower()
     if language_choice not in SUPPORTED_LANGUAGES:
-        language_choice = "auto"
+        return jsonify({"error": "Please choose the song language."}), 400
 
     file = request.files["audio"]
     audio_bytes = file.read()
@@ -335,9 +334,8 @@ def transcribe():
             "response_format": "verbose_json",
             "timestamp_granularities": ["segment"],
             "temperature": 0.0,
+            "language": language_choice,
         }
-        if language_choice != "auto":
-            request_kwargs["language"] = language_choice
 
         result = client.audio.transcriptions.create(**request_kwargs)
         segments = result_field(result, "segments", []) or []
@@ -359,9 +357,7 @@ def transcribe():
 
         app.logger.info("Transcribed %d lines (language choice=%s, detected=%s)", len(texts), language_choice, detected_language)
 
-        # Only skip translation when the user said the song is English. Whisper's auto-detected
-        # language comes from the opening seconds, so it is wrong for songs that start with a
-        # stray "Thank you." or switch language; lines that are already English are shown once.
+        # Skip translation for English songs; lines that are already English are shown once.
         if language_choice == "en":
             lyrics = "\n".join(f"{format_time(start)} _{text}_" for start, text in zip(starts, texts))
             return jsonify({"lyrics": lyrics})
@@ -375,19 +371,9 @@ def transcribe():
             else:
                 output_lines.append(f"{format_time(start_time)} _{text}_")
 
-        warnings = []
-        if language_choice == "auto" and detected_language == "en":
-            warnings.append(
-                "Auto-detect heard English. If this song is in another language "
-                "(for example Swahili), choose it under \"Song language\" and transcribe again "
-                "for much better results."
-            )
-        if warning:
-            warnings.append(warning)
-
         payload = {"lyrics": "\n".join(output_lines)}
-        if warnings:
-            payload["warning"] = " ".join(warnings)
+        if warning:
+            payload["warning"] = warning
         return jsonify(payload)
     except RateLimitError as exc:
         app.logger.warning("Groq rate limit reached: %s", exc)
