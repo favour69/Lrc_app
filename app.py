@@ -375,9 +375,19 @@ def transcribe():
             else:
                 output_lines.append(f"{format_time(start_time)} _{text}_")
 
-        payload = {"lyrics": "\n".join(output_lines)}
+        warnings = []
+        if language_choice == "auto" and detected_language == "en":
+            warnings.append(
+                "Auto-detect heard English. If this song is in another language "
+                "(for example Swahili), choose it under \"Song language\" and transcribe again "
+                "for much better results."
+            )
         if warning:
-            payload["warning"] = warning
+            warnings.append(warning)
+
+        payload = {"lyrics": "\n".join(output_lines)}
+        if warnings:
+            payload["warning"] = " ".join(warnings)
         return jsonify(payload)
     except RateLimitError as exc:
         app.logger.warning("Groq rate limit reached: %s", exc)
