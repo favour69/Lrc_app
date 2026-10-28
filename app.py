@@ -340,10 +340,12 @@ def transcribe():
         if not texts:
             return jsonify({"error": "No speech detected in the uploaded audio."}), 422
 
-        song_language = language_choice if language_choice != "auto" else detected_language
         app.logger.info("Transcribed %d lines (language choice=%s, detected=%s)", len(texts), language_choice, detected_language)
 
-        if song_language == "en":
+        # Only skip translation when the user said the song is English. Whisper's auto-detected
+        # language comes from the opening seconds, so it is wrong for songs that start with a
+        # stray "Thank you." or switch language; lines that are already English are shown once.
+        if language_choice == "en":
             lyrics = "\n".join(f"{format_time(start)} _{text}_" for start, text in zip(starts, texts))
             return jsonify({"lyrics": lyrics})
 
