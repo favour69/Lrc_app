@@ -26,6 +26,10 @@ PREFERRED_TRANSLATE_MODELS = [
 ]
 MAX_TRANSLATE_MODELS = 4
 MODEL_CACHE_SECONDS = 600
+# Segments Whisper itself flags as probably silence (and is unsure about) are dropped;
+# these are the usual "Thank you." / "¡Gracias!" hallucinations over quiet intros and outros.
+SILENCE_NO_SPEECH_PROB = 0.6
+SILENCE_AVG_LOGPROB = -1.0
 TRANSLATE_BATCH_SIZE = 40
 # Model ids containing any of these are not chat models (or not suitable for translation).
 EXCLUDED_MODEL_MARKERS = (
@@ -97,6 +101,16 @@ def result_field(result, key, default=None):
         return value
     extra = getattr(result, "model_extra", None) or {}
     return extra.get(key, default)
+
+
+def looks_like_silence(seg):
+    """Whisper's own rule for hallucinated text over silence: likely no speech AND low confidence."""
+    try:
+        no_speech = float(get(seg, "no_speech_prob", 0.0) or 0.0)
+        logprob = float(get(seg, "avg_logprob", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return no_speech > SILENCE_NO_SPEECH_PROB and logprob < SILENCE_AVG_LOGPROB
 
 
 def normalize_language(value):
@@ -333,6 +347,9 @@ def transcribe():
         texts = []
         for seg in segments:
             text = str(get(seg, "text", "")).strip()
+            if text and looks_like_silence(seg):
+                app.logger.info("Dropped probable silence hallucination at %.1fs: %r", float(get(seg, "start", 0.0)), text)
+                continue
             if text:
                 starts.append(float(get(seg, "start", 0.0)))
                 texts.append(text)
