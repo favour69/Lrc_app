@@ -544,6 +544,97 @@
         background-size: 200% 100%;
       }
 
+      /* History */
+      .history-panel {
+        margin-top: 16px;
+        padding: 18px;
+        border-radius: 22px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(247,245,242,0.9));
+        border: 1px solid var(--border);
+      }
+
+      :root[data-theme="dark"] .history-panel {
+        background: linear-gradient(180deg, rgba(20, 29, 39, 0.8), rgba(17, 24, 32, 0.92));
+      }
+
+      .history-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .history-empty {
+        margin: 0;
+        font-size: 0.88rem;
+        color: var(--muted);
+      }
+
+      .history-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+        max-height: 340px;
+        overflow-y: auto;
+      }
+
+      .history-item {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: rgba(255,255,255,0.5);
+      }
+
+      :root[data-theme="dark"] .history-item {
+        background: rgba(255,255,255,0.05);
+      }
+
+      .history-info {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .history-name {
+        font-size: 0.9rem;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .history-meta {
+        margin-top: 2px;
+        font-size: 0.76rem;
+        color: var(--muted);
+      }
+
+      .history-line {
+        display: block;
+      }
+
+      .history-item .small-button {
+        flex-shrink: 0;
+        padding: 0.5rem 0.75rem;
+        min-height: 40px;
+        font-size: 0.82rem;
+      }
+
+      .history-item .history-delete {
+        color: var(--danger);
+      }
+
+      :root[data-theme="dark"] .history-item .small-button {
+        background: rgba(255,255,255,0.07);
+      }
+
       @media (max-width: 760px) {
         body {
           padding:
@@ -558,7 +649,12 @@
         }
 
         .content {
-          grid-template-columns: 1fr;
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .left-panel,
+        .right-panel {
+          min-width: 0;
         }
 
         .left-panel {
@@ -658,6 +754,11 @@
 
         .result-actions .small-button:last-child {
           grid-column: 1 / -1;
+        }
+
+        .history-panel {
+          padding: 14px;
+          border-radius: 18px;
         }
       }
 
@@ -846,6 +947,15 @@
                 <button class="small-button" type="button" onclick="downloadLyrics()">Download .txt</button>
               </div>
             </div>
+
+            <div class="history-panel" id="historyPanel">
+              <div class="history-header">
+                <div class="result-title">History</div>
+                <button class="small-button" type="button" id="historyClear" hidden>Clear all</button>
+              </div>
+              <p class="history-empty" id="historyEmpty">No history yet. Songs you transcribe will appear here.</p>
+              <ul class="history-list" id="historyList"></ul>
+            </div>
           </aside>
         </div>
       </div>
@@ -862,6 +972,7 @@
       const transcribeBtn = document.getElementById('transcribeBtn');
       const languageSelect = document.getElementById('languageSelect');
       const warningBox = document.getElementById('warningBox');
+      let currentSongName = null;
 
       function clearWarning() {
         warningBox.textContent = '';
@@ -945,9 +1056,10 @@
           return;
         }
 
-        const filename = (fileInput.files && fileInput.files[0] && fileInput.files[0].name)
-          ? fileInput.files[0].name.replace(/\.[^.]+$/, '') + '.txt'
-          : 'lyrics.txt';
+        const sourceName = currentSongName
+          || (fileInput.files && fileInput.files[0] && fileInput.files[0].name)
+          || '';
+        const filename = sourceName ? sourceName.replace(/\.[^.]+$/, '') + '.txt' : 'lyrics.txt';
 
         const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
@@ -957,6 +1069,138 @@
         a.click();
         URL.revokeObjectURL(url);
       }
+
+      // ----- History (kept in this browser only; nothing is sent to the server) -----
+      const HISTORY_KEY = 'lyricsHistory';
+      const HISTORY_LIMIT = 30;
+      const historyList = document.getElementById('historyList');
+      const historyEmpty = document.getElementById('historyEmpty');
+      const historyClear = document.getElementById('historyClear');
+
+      function loadHistory() {
+        try {
+          const items = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+          return Array.isArray(items) ? items : [];
+        } catch (error) {
+          return [];
+        }
+      }
+
+      function saveHistory(items) {
+        let list = items.slice(0, HISTORY_LIMIT);
+        // If the browser's storage is full, drop the oldest entries until it fits.
+        while (true) {
+          try {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+            return list;
+          } catch (error) {
+            if (list.length <= 1) return list;
+            list = list.slice(0, list.length - 1);
+          }
+        }
+      }
+
+      function formatWhen(timestamp) {
+        try {
+          return new Date(timestamp).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+        } catch (error) {
+          return new Date(timestamp).toLocaleString();
+        }
+      }
+
+      function renderHistory() {
+        const items = loadHistory();
+        historyList.textContent = '';
+        historyEmpty.style.display = items.length ? 'none' : 'block';
+        historyClear.hidden = !items.length;
+
+        items.forEach((item) => {
+          const row = document.createElement('li');
+          row.className = 'history-item';
+
+          const info = document.createElement('div');
+          info.className = 'history-info';
+          const name = document.createElement('div');
+          name.className = 'history-name';
+          name.textContent = item.name || 'Untitled song';
+          name.title = item.name || '';
+          const meta = document.createElement('div');
+          meta.className = 'history-meta';
+          const when = document.createElement('span');
+          when.className = 'history-line';
+          when.textContent = formatWhen(item.time);
+          meta.appendChild(when);
+          if (item.language) {
+            const lang = document.createElement('span');
+            lang.className = 'history-line';
+            lang.textContent = item.language;
+            meta.appendChild(lang);
+          }
+          info.append(name, meta);
+
+          const view = document.createElement('button');
+          view.type = 'button';
+          view.className = 'small-button';
+          view.textContent = 'View';
+          view.addEventListener('click', () => showHistoryItem(item.id));
+
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'small-button history-delete';
+          remove.textContent = 'Delete';
+          remove.setAttribute('aria-label', 'Delete ' + (item.name || 'this song') + ' from history');
+          remove.addEventListener('click', () => deleteHistoryItem(item.id));
+
+          row.append(info, view, remove);
+          historyList.appendChild(row);
+        });
+      }
+
+      function addHistory(name, language, lyrics, warning) {
+        const entry = {
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+          name: name,
+          language: language,
+          time: Date.now(),
+          lyrics: lyrics,
+          warning: warning || '',
+        };
+        saveHistory([entry].concat(loadHistory()));
+        renderHistory();
+      }
+
+      function showHistoryItem(id) {
+        const item = loadHistory().find((entry) => entry.id === id);
+        if (!item) return;
+
+        currentSongName = item.name || null;
+        resultEl.textContent = item.lyrics;
+        if (item.warning) {
+          warningBox.textContent = `Warning: ${item.warning}`;
+          warningBox.classList.add('visible');
+        } else {
+          clearWarning();
+        }
+        updateStatus('Loaded from history', 'success');
+        resultChip.textContent = 'Ready';
+        resultChip.style.background = 'var(--success-soft)';
+        resultChip.style.color = 'var(--success)';
+        resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+
+      function deleteHistoryItem(id) {
+        saveHistory(loadHistory().filter((entry) => entry.id !== id));
+        renderHistory();
+      }
+
+      historyClear.addEventListener('click', () => {
+        if (confirm('Clear all history on this device?')) {
+          try { localStorage.removeItem(HISTORY_KEY); } catch (error) {}
+          renderHistory();
+        }
+      });
+
+      renderHistory();
 
       fileInput.addEventListener('change', () => {
         const file = fileInput.files && fileInput.files[0];
@@ -1111,6 +1355,16 @@
             warningBox.classList.add('visible');
           } else {
             clearWarning();
+          }
+
+          if (data.lyrics) {
+            currentSongName = file.name;
+            addHistory(
+              file.name,
+              languageSelect.options[languageSelect.selectedIndex].textContent,
+              data.lyrics,
+              data.warning
+            );
           }
 
           updateStatus('Complete', 'success');
