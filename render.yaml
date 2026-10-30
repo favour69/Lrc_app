@@ -8,3 +8,13 @@ services:
     envVars:
       - key: GROQ_API_KEY
         sync: false
+      # Admin page (/admin). Without ADMIN_PASSWORD the admin area does not exist.
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Free Postgres connection string (e.g. from neon.tech) so stats survive redeploys.
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ANALYTICS_SALT
+        generateValue: true

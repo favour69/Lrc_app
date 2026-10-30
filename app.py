@@ -1,15 +1,38 @@
+import hashlib
 import json
 import os
 import re
 import threading
 import time
+import uuid
+from datetime import timedelta
 
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, g, jsonify, make_response, render_template, request, send_from_directory
 from groq import APIConnectionError, APIStatusError, AuthenticationError, Groq, RateLimitError
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+from admin import bp as admin_bp
+from metrics import classify_device, hash_ip, store
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 app.config["JSON_SORT_KEYS"] = False
+
+if os.environ.get("RENDER") or os.environ.get("TRUST_PROXY"):
+    # Behind the host's proxy: trust one hop so request.remote_addr is the real visitor address.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+_secret = os.environ.get("SECRET_KEY") or os.environ.get("ADMIN_PASSWORD") or ""
+app.secret_key = hashlib.sha256(("lrc-session:" + _secret).encode()).digest() if _secret else os.urandom(32)
+app.config.update(
+    SESSION_COOKIE_NAME="lrc_admin",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Strict",
+    SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")),
+    SESSION_COOKIE_PATH="/admin",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+)
+app.register_blueprint(admin_bp)
 
 api_key = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=api_key) if api_key else None
@@ -306,26 +329,99 @@ def service_worker():
     return response
 
 
+VISITOR_COOKIE = "lrc_vid"
+_VISITOR_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def current_visitor():
+    """(visitor id, is_new). Anonymous random id kept in a cookie; no personal data."""
+    cookie = request.cookies.get(VISITOR_COOKIE, "")
+    if _VISITOR_RE.match(cookie):
+        return cookie, False
+    return uuid.uuid4().hex, True
+
+
 @app.route("/")
 def home():
-    return render_template("index.html")
+    visitor, is_new = current_visitor()
+    device = classify_device(request.headers.get("User-Agent", ""))
+    if device != "bot":
+        store.record_visit(visitor, hash_ip(request.remote_addr), device)
+
+    response = make_response(render_template("index.html"))
+    if is_new and device != "bot":
+        response.set_cookie(
+            VISITOR_COOKIE,
+            visitor,
+            max_age=365 * 24 * 3600,
+            httponly=True,
+            samesite="Lax",
+            secure=bool(os.environ.get("RENDER")),
+        )
+    return response
+
+
+def fail(kind, message, status):
+    """JSON error that also tells the metrics what kind of failure it was."""
+    if hasattr(g, "tx"):
+        g.tx["error_kind"] = kind
+    return jsonify({"error": message}), status
+
+
+@app.after_request
+def log_transcription(response):
+    if request.method != "POST" or request.path != "/transcribe":
+        return response
+
+    tx = getattr(g, "tx", {})
+    status = response.status_code
+    ok = status < 400
+    kind = None
+    if not ok:
+        kind = tx.get("error_kind") or ("file_too_large" if status == 413 else "error")
+
+    ip_hash = hash_ip(request.remote_addr)
+    cookie = request.cookies.get(VISITOR_COOKIE, "")
+    visitor = cookie if _VISITOR_RE.match(cookie) else "anon-" + ip_hash
+    started = tx.get("t0")
+    store.record_request(
+        visitor_id=visitor,
+        ip_hash=ip_hash,
+        device=classify_device(request.headers.get("User-Agent", "")),
+        language=tx.get("language"),
+        filename=tx.get("filename"),
+        size_bytes=tx.get("size_bytes"),
+        audio_seconds=tx.get("audio_seconds"),
+        duration_ms=int((time.time() - started) * 1000) if started else None,
+        status="ok" if ok else "error",
+        http_status=status,
+        error_kind=kind,
+        lines=tx.get("lines"),
+        translation_failed=tx.get("translation_failed", False),
+    )
+    return response
 
 
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
+    g.tx = {"t0": time.time()}
+
     if client is None:
-        return jsonify({"error": "GROQ_API_KEY is not set on the server"}), 500
+        return fail("no_api_key", "GROQ_API_KEY is not set on the server", 500)
 
     if "audio" not in request.files:
-        return jsonify({"error": "No audio file uploaded"}), 400
+        return fail("no_file", "No audio file uploaded", 400)
 
     language_choice = (request.form.get("language") or "").strip().lower()
     if language_choice not in SUPPORTED_LANGUAGES:
-        return jsonify({"error": "Please choose the song language."}), 400
+        return fail("no_language", "Please choose the song language.", 400)
+    g.tx["language"] = language_choice
 
     file = request.files["audio"]
     audio_bytes = file.read()
     filename = file.filename or "song.mp3"
+    g.tx["filename"] = filename
+    g.tx["size_bytes"] = len(audio_bytes)
 
     try:
         request_kwargs = {
@@ -340,6 +436,10 @@ def transcribe():
         result = client.audio.transcriptions.create(**request_kwargs)
         segments = result_field(result, "segments", []) or []
         detected_language = normalize_language(result_field(result, "language"))
+        try:
+            g.tx["audio_seconds"] = float(result_field(result, "duration") or 0) or None
+        except (TypeError, ValueError):
+            pass
 
         starts = []
         texts = []
@@ -353,7 +453,8 @@ def transcribe():
                 texts.append(text)
 
         if not texts:
-            return jsonify({"error": "No speech detected in the uploaded audio."}), 422
+            return fail("no_speech", "No speech detected in the uploaded audio.", 422)
+        g.tx["lines"] = len(texts)
 
         app.logger.info("Transcribed %d lines (language choice=%s, detected=%s)", len(texts), language_choice, detected_language)
 
@@ -363,6 +464,7 @@ def transcribe():
             return jsonify({"lyrics": lyrics})
 
         translated_lines, warning = translate_lines(texts)
+        g.tx["translation_failed"] = bool(warning)
         output_lines = []
         for idx, (start_time, text) in enumerate(zip(starts, texts)):
             english_line = translated_lines[idx] if idx < len(translated_lines) else None
@@ -377,21 +479,21 @@ def transcribe():
         return jsonify(payload)
     except RateLimitError as exc:
         app.logger.warning("Groq rate limit reached: %s", exc)
-        return jsonify({"error": "usage limit reached, try again later"}), 429
+        return fail("groq_rate_limit", "usage limit reached, try again later", 429)
     except AuthenticationError as exc:
         app.logger.warning("Groq auth error: %s", exc)
-        return jsonify({"error": "Invalid Groq API key."}), 401
+        return fail("groq_auth", "Invalid Groq API key.", 401)
     except APIConnectionError as exc:
         app.logger.warning("Groq connection error: %s", exc)
-        return jsonify({"error": "Could not reach the Groq API. Please try again later."}), 502
+        return fail("groq_connection", "Could not reach the Groq API. Please try again later.", 502)
     except APIStatusError as exc:
         app.logger.warning("Groq API error %s: %s", exc.status_code, exc)
         if exc.status_code == 413:
-            return jsonify({"error": "File is over 25 MB."}), 413
-        return jsonify({"error": f"Groq could not process this file: {short_error(exc)}"}), 502
+            return fail("file_too_large", "File is over 25 MB.", 413)
+        return fail("groq_error", f"Groq could not process this file: {short_error(exc)}", 502)
     except Exception as exc:
         app.logger.exception("Unexpected error while transcribing")
-        return jsonify({"error": str(exc)}), 500
+        return fail("server_error", str(exc), 500)
 
 
 if __name__ == "__main__":

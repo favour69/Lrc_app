@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lrc-app-v6';
+const CACHE_NAME = 'lrc-app-v7';
 const APP_SHELL = ['/'];
 
 self.addEventListener('install', (event) => {
@@ -24,6 +24,12 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (request.url.startsWith('https://') && new URL(request.url).origin !== self.location.origin) {
+    return;
+  }
+
+  // Never intercept or cache the admin area (or any page other than the app itself).
+  const path = new URL(request.url).pathname;
+  if (path.startsWith('/admin') || (request.mode === 'navigate' && path !== '/')) {
     return;
   }
 

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Admin dashboard</title>
+    <script nonce="{{ nonce }}">
+      (function () {
+        var theme = null;
+        try { theme = localStorage.getItem('theme'); } catch (e) {}
+        if (theme !== 'light' && theme !== 'dark') {
+          theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
+    <style nonce="{{ nonce }}">
+      :root {
+        --bg: #f5f1ea; --panel: #fffdfb; --border: rgba(25, 28, 35, 0.1); --text: #1d2430; --muted: #5f6776;
+        --accent: #4a6fa5; --accent-strong: #2a466f; --accent-soft: #dfeafc;
+        --success: #2d7a5f; --success-soft: #dff6ee; --warning: #b26a1d; --warning-soft: #f9ead6;
+        --danger: #b54d4d; --danger-soft: #ffe8e3; --track: rgba(25, 28, 35, 0.08);
+        --shadow: 0 12px 30px rgba(24, 30, 40, 0.06);
+      }
+      :root[data-theme="dark"] {
+        --bg: #101722; --panel: #172231; --border: rgba(255, 255, 255, 0.09); --text: #eef3fb; --muted: #b3bfd4;
+        --accent: #98bcff; --accent-strong: #dfeafc; --accent-soft: rgba(152, 188, 255, 0.14);
+        --success: #86d7ba; --success-soft: rgba(134, 215, 186, 0.14); --warning: #f3b86d; --warning-soft: rgba(243, 184, 109, 0.12);
+        --danger: #f09a9a; --danger-soft: rgba(240, 154, 154, 0.14); --track: rgba(255, 255, 255, 0.1);
+        --shadow: 0 12px 30px rgba(0, 0, 0, 0.3); color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      html, body { margin: 0; background: var(--bg); color: var(--text);
+        font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      body { padding: 16px 14px 40px; }
+      .wrap { max-width: 1100px; margin: 0 auto; }
+      header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+      h1 { margin: 0; font-size: 1.35rem; letter-spacing: -0.02em; }
+      h1 small { display: block; margin-top: 2px; font-size: 0.78rem; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+      .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      select, button, .btn { min-height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border);
+        background: var(--panel); color: var(--text); font-size: 0.88rem; font-weight: 600; cursor: pointer;
+        text-decoration: none; display: inline-flex; align-items: center; }
+      select { font-size: 16px; }
+      button:hover, .btn:hover { border-color: var(--accent); }
+      .check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.84rem; color: var(--muted); }
+      .banner { margin-bottom: 14px; padding: 11px 14px; border-radius: 12px; font-size: 0.86rem; line-height: 1.5;
+        background: var(--warning-soft); color: var(--warning); }
+      .banner.error { background: var(--danger-soft); color: var(--danger); }
+      .grid { display: grid; gap: 12px; }
+      .kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 12px; }
+      .card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; box-shadow: var(--shadow); min-width: 0; }
+      .kpi .label { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+      .kpi .value { margin-top: 6px; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; }
+      .kpi .sub { margin-top: 2px; font-size: 0.76rem; color: var(--muted); }
+      .spaced { margin-bottom: 12px; }
+      .two { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-bottom: 12px; }
+      .three { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 12px; }
+      h2 { margin: 0 0 12px; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+      .meter { margin-bottom: 14px; }
+      .meter:last-child { margin-bottom: 0; }
+      .meter .row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.84rem; margin-bottom: 6px; }
+      .meter .row span:last-child { color: var(--muted); }
+      .track { height: 9px; border-radius: 999px; background: var(--track); overflow: hidden; }
+      .fill { height: 100%; border-radius: inherit; background: var(--accent); }
+      .fill.warn { background: var(--warning); }
+      .fill.bad { background: var(--danger); }
+      .bars .item { margin-bottom: 10px; }
+      .bars .item:last-child { margin-bottom: 0; }
+      .bars .row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.84rem; margin-bottom: 4px; }
+      .bars .row span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .empty { margin: 0; font-size: 0.86rem; color: var(--muted); }
+      svg.chart { width: 100%; height: auto; display: block; }
+      .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 0.78rem; color: var(--muted); }
+      .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+      .tablewrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+      th { text-align: left; padding: 8px 10px; font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted);
+        border-bottom: 1px solid var(--border); white-space: nowrap; }
+      td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      td.nowrap { white-space: nowrap; }
+      td.file { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
+      .pill.ok { background: var(--success-soft); color: var(--success); }
+      .pill.err { background: var(--danger-soft); color: var(--danger); }
+      .pill.warn { background: var(--warning-soft); color: var(--warning); }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem; }
+      .link { border: 0; background: none; padding: 0; min-height: 0; color: var(--accent); text-decoration: underline; font-weight: 600; font-size: inherit; }
+      .chip { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 5px 6px 5px 12px; border-radius: 999px;
+        background: var(--accent-soft); color: var(--accent-strong); font-size: 0.8rem; font-weight: 600; }
+      .chip button { min-height: 26px; padding: 0 10px; border-radius: 999px; }
+      .more { margin-top: 12px; text-align: center; }
+      .updated { margin-top: 18px; text-align: center; font-size: 0.76rem; color: var(--muted); }
+      .bar-ok { fill: var(--success); }
+      .bar-err { fill: var(--danger); }
+      .line-visits { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+      .dot-visits { fill: var(--accent); }
+      .axis { stroke: var(--border); stroke-width: 1; }
+      .axis-label { fill: var(--muted); font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Admin dashboard<small>Lyrics by Favour &middot; usage</small></h1>
+        <div class="toolbar">
+          <select id="range" aria-label="Time range">
+            <option value="24h">Last 24 hours</option>
+            <option value="7d" selected>Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="all">All time</option>
+          </select>
+          <button type="button" id="refresh">Refresh</button>
+          <label class="check"><input type="checkbox" id="auto" /> Auto-refresh</label>
+          <a class="btn" id="export" href="/admin/export.csv?range=7d">Export CSV</a>
+          <form method="post" action="/admin/logout"><button type="submit">Log out</button></form>
+        </div>
+      </header>
+
+      <div id="banners"></div>
+
+      <section class="grid kpis" id="kpis" aria-label="Key numbers"></section>
+
+      <section class="grid two">
+        <div class="card"><h2>Activity</h2><div id="chart"></div></div>
+        <div class="card"><h2>Groq usage (rolling)</h2><div id="quota"></div></div>
+      </section>
+
+      <section class="grid three">
+        <div class="card bars"><h2>Languages</h2><div id="languages"></div></div>
+        <div class="card bars"><h2>Errors</h2><div id="errors"></div></div>
+        <div class="card bars"><h2>Visitor devices</h2><div id="devices"></div></div>
+      </section>
+
+      <section class="card spaced" id="visitorsCard">
+        <h2>Visitors</h2>
+        <div class="tablewrap"><div id="visitors"></div></div>
+      </section>
+
+      <section class="card" id="requestsCard">
+        <h2>Requests</h2>
+        <div id="filter"></div>
+        <div class="tablewrap"><div id="requests"></div></div>
+        <div class="more"><button type="button" id="more" hidden>Load more</button></div>
+      </section>
+
+      <div class="updated" id="updated"></div>
+    </div>
+
+    <script nonce="{{ nonce }}">
+{% raw %}
+      'use strict';
+      const $ = (id) => document.getElementById(id);
+      const SVG = 'http://www.w3.org/2000/svg';
+      const LANG = { sw: 'Swahili', es: 'Spanish', en: 'English', pt: 'Portuguese', fr: 'French', de: 'German',
+        it: 'Italian', ko: 'Korean', ja: 'Japanese', zh: 'Chinese', ar: 'Arabic', hi: 'Hindi' };
+      const ERR = { groq_rate_limit: 'Groq limit reached', groq_auth: 'Groq key rejected', groq_connection: 'Groq unreachable',
+        groq_error: 'Groq error', file_too_large: 'File over 25 MB', no_speech: 'No speech found', no_file: 'No file sent',
+        no_language: 'No language chosen', no_api_key: 'API key missing', server_error: 'Server error', error: 'Other error' };
+
+      // Build elements without innerHTML: every value (file names especially) goes in as text.
+      function h(tag, props, ...kids) {
+        const el = document.createElement(tag);
+        for (const [k, v] of Object.entries(props || {})) {
+          if (k === 'class') el.className = v;
+          else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+          else el.setAttribute(k, v);
+        }
+        for (const kid of kids) if (kid != null) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+        return el;
+      }
+      function sv(tag, attrs, title) {
+        const el = document.createElementNS(SVG, tag);
+        for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
+        if (title) { const t = document.createElementNS(SVG, 'title'); t.textContent = title; el.appendChild(t); }
+        return el;
+      }
+      const clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); };
+
+      const fmtInt = (n) => Number(n || 0).toLocaleString();
+      const fmtWhen = (ts) => new Date(ts * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+      const fmtDay = (ts) => new Date(ts * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      function fmtDur(sec) {
+        sec = Math.round(sec || 0);
+        const hrs = Math.floor(sec / 3600), min = Math.floor((sec % 3600) / 60), s = sec % 60;
+        if (hrs) return hrs + 'h ' + String(min).padStart(2, '0') + 'm';
+        if (min) return min + 'm ' + String(s).padStart(2, '0') + 's';
+        return s + 's';
+      }
+      function fmtBytes(b) {
+        if (b == null) return '—';
+        if (b < 1024 * 1024) return Math.max(1, Math.round(b / 1024)) + ' KB';
+        if (b < 1024 * 1024 * 1024) return (b / 1048576).toFixed(1) + ' MB';
+        return (b / 1073741824).toFixed(2) + ' GB';
+      }
+      const fmtMs = (ms) => ms == null ? '—' : (ms < 1000 ? ms + ' ms' : (ms / 1000).toFixed(1) + ' s');
+      const shortId = (id) => String(id || '').slice(0, 8);
+      const langName = (c) => LANG[c] || c || '—';
+
+      const state = { visitor: null, rows: 0, busy: false, timer: null };
+
+      async function fetchStats(offset) {
+        const q = new URLSearchParams({
+          range: $('range').value, tz: String(-new Date().getTimezoneOffset()), limit: '100', offset: String(offset || 0),
+        });
+        if (state.visitor) q.set('visitor', state.visitor);
+        const res = await fetch('/admin/api/stats?' + q.toString(), { credentials: 'same-origin', cache: 'no-store' });
+        if (res.status === 401) { location.reload(); throw new Error('signed out'); }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+      }
+
+      function kpi(label, value, sub) {
+        return h('div', { class: 'card kpi' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), sub ? h('div', { class: 'sub' }, sub) : null);
+      }
+
+      function renderBanners(d, error) {
+        const box = $('banners'); clear(box);
+        if (error) box.append(h('div', { class: 'banner error', role: 'alert' }, error));
+        if (d && d.backend === 'sqlite') {
+          box.append(h('div', { class: 'banner' }, 'Stats are stored in a temporary file on the server and will be erased when the app redeploys or restarts. Set the DATABASE_URL setting to keep them permanently.'));
+        }
+      }
+
+      function renderKpis(d) {
+        const t = d.totals, box = $('kpis'); clear(box);
+        box.append(
+          kpi('Transcriptions', fmtInt(t.requests), fmtInt(t.ok) + ' ok · ' + fmtInt(t.errors) + ' failed'),
+          kpi('Success rate', t.success_rate == null ? '—' : Math.round(t.success_rate * 100) + '%'),
+          kpi('Visitors', fmtInt(t.visitors), 'unique browsers'),
+          kpi('Page views', fmtInt(t.page_views)),
+          kpi('Audio transcribed', fmtDur(t.audio_seconds)),
+          kpi('Avg. time per song', t.avg_duration_ms == null ? '—' : fmtMs(Math.round(t.avg_duration_ms)), 'successful runs'),
+          kpi('Uploaded', fmtBytes(t.bytes)),
+          kpi('Translation issues', fmtInt(t.translation_failures), 'songs with failed lines'),
+        );
+      }
+
+      function meter(label, used, limit, unit) {
+        const pct = limit ? Math.min(100, (used / limit) * 100) : 0;
+        const fill = h('div', { class: 'fill' + (pct >= 90 ? ' bad' : pct >= 70 ? ' warn' : '') });
+        fill.style.width = pct.toFixed(1) + '%';
+        return h('div', { class: 'meter' },
+          h('div', { class: 'row' }, h('span', {}, label), h('span', {}, unit(used) + ' of ' + unit(limit))),
+          h('div', { class: 'track' }, fill));
+      }
+
+      function renderQuota(d) {
+        const q = d.quota, l = d.limits, box = $('quota'); clear(box);
+        box.append(
+          meter('Audio, last hour', q.audio_seconds_hour, l.audio_seconds_hour, fmtDur),
+          meter('Audio, last 24 hours', q.audio_seconds_day, l.audio_seconds_day, fmtDur),
+          meter('Requests, last minute', q.requests_minute, l.requests_minute, (n) => String(Math.round(n))),
+          h('p', { class: 'empty' }, 'Limits are the Groq free-plan numbers (check your own Groq console). Used = audio this app sent to Groq.'));
+      }
+
+      function renderChart(d) {
+        const box = $('chart'); clear(box);
+        const days = d.days;
+        if (!days.length || days.every((x) => !x.ok && !x.error && !x.visits)) {
+          box.append(h('p', { class: 'empty' }, 'No activity in this period yet.')); return;
+        }
+        const W = 640, H = 190, L = 34, R = 8, T = 10, B = 24, innerW = W - L - R, innerH = H - T - B;
+        const peak = Math.max(1, ...days.map((x) => Math.max(x.ok + x.error, x.visits)));
+        const niceMax = peak <= 4 ? peak : Math.ceil(peak / 4) * 4;
+        const y = (v) => T + innerH - (v / niceMax) * innerH;
+        const step = innerW / days.length, bw = Math.max(2, Math.min(28, step * 0.62));
+        const svg = sv('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart', role: 'img', 'aria-label': 'Requests and page views per day' });
+        for (let i = 0; i <= 4; i++) {
+          const v = (niceMax / 4) * i, yy = y(v);
+          svg.append(sv('line', { x1: L, x2: W - R, y1: yy, y2: yy, class: 'axis' }));
+          const tick = sv('text', { x: L - 6, y: yy + 4, 'text-anchor': 'end', class: 'axis-label' });
+          tick.textContent = String(Math.round(v));
+          svg.append(tick);
+        }
+        const pts = [];
+        days.forEach((day, i) => {
+          const cx = L + step * i + step / 2, x = cx - bw / 2;
+          const label = fmtDay(day.day) + ': ' + day.ok + ' ok, ' + day.error + ' failed, ' + day.visits + ' page views';
+          const okH = (day.ok / niceMax) * innerH, errH = (day.error / niceMax) * innerH;
+          if (day.ok) svg.append(sv('rect', { x, y: y(day.ok), width: bw, height: okH, rx: 2, class: 'bar-ok' }, label));
+          if (day.error) svg.append(sv('rect', { x, y: y(day.ok + day.error), width: bw, height: errH, rx: 2, class: 'bar-err' }, label));
+          pts.push([cx, y(day.visits), label]);
+        });
+        svg.append(sv('polyline', { points: pts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '), class: 'line-visits' }));
+        if (days.length <= 45) pts.forEach((p) => svg.append(sv('circle', { cx: p[0], cy: p[1], r: 2.6, class: 'dot-visits' }, p[2])));
+        const idx = days.length > 2 ? [0, Math.floor((days.length - 1) / 2), days.length - 1] : days.map((_, i) => i);
+        idx.forEach((i) => {
+          const t = sv('text', { x: L + step * i + step / 2, y: H - 6, 'text-anchor': i === 0 ? 'start' : i === days.length - 1 ? 'end' : 'middle', class: 'axis-label' });
+          t.textContent = fmtDay(days[i].day); svg.append(t);
+        });
+        box.append(svg, h('div', { class: 'legend' },
+          h('span', {}, h('i', { class: 'lg-ok' }), 'Transcriptions'), h('span', {}, h('i', { class: 'lg-err' }), 'Failed'), h('span', {}, h('i', { class: 'lg-vis' }), 'Page views')));
+        const colors = { 'lg-ok': 'var(--success)', 'lg-err': 'var(--danger)', 'lg-vis': 'var(--accent)' };
+        box.querySelectorAll('.legend i').forEach((i) => { i.style.background = colors[i.className]; });
+      }
+
+      function renderBars(id, items, label, color) {
+        const box = $(id); clear(box);
+        if (!items.length) { box.append(h('p', { class: 'empty' }, 'Nothing yet.')); return; }
+        const max = Math.max(...items.map((i) => i.count));
+        items.forEach((it) => {
+          const fill = h('div', { class: 'fill' });
+          fill.style.width = ((it.count / max) * 100).toFixed(1) + '%';
+          if (color) fill.style.background = color;
+          box.append(h('div', { class: 'item' },
+            h('div', { class: 'row' }, h('span', {}, label(it.name)), h('span', {}, fmtInt(it.count))), h('div', { class: 'track' }, fill)));
+        });
+      }
+
+      function table(headers, rows) {
+        return h('table', {}, h('thead', {}, h('tr', {}, ...headers.map((x) => h('th', {}, x)))), h('tbody', {}, ...rows));
+      }
+
+      function renderVisitors(d) {
+        const box = $('visitors'); clear(box);
+        if (!d.visitors.length) { box.append(h('p', { class: 'empty' }, 'No visitors in this period yet.')); return; }
+        const rows = d.visitors.map((v) => h('tr', {},
+          h('td', { class: 'mono nowrap', title: v.visitor_id }, shortId(v.visitor_id)),
+          h('td', { class: 'nowrap' }, v.device || '—'),
+          h('td', { class: 'mono nowrap', title: 'Scrambled (hashed) IP address' }, v.ip_hash ? v.ip_hash.slice(0, 8) : '—'),
+          h('td', { class: 'nowrap' }, fmtWhen(v.first_seen)),
+          h('td', { class: 'nowrap' }, fmtWhen(v.last_seen)),
+          h('td', { class: 'num' }, fmtInt(v.visits)),
+          h('td', { class: 'num' }, fmtInt(v.requests)),
+          h('td', { class: 'num' }, fmtInt(v.errors)),
+          h('td', { class: 'num' }, fmtDur(v.audio_seconds)),
+          h('td', {}, v.requests ? h('button', { class: 'link', type: 'button', onclick: () => { state.visitor = v.visitor_id; reload(); $('requestsCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 'View requests') : '')));
+        box.append(table(['Visitor', 'Device', 'IP hash', 'First seen', 'Last seen', 'Visits', 'Songs', 'Errors', 'Audio', ''], rows));
+      }
+
+      function requestRow(r) {
+        const bad = r.status !== 'ok';
+        return h('tr', {},
+          h('td', { class: 'nowrap' }, fmtWhen(r.ts)),
+          h('td', { class: 'mono nowrap', title: r.visitor_id }, shortId(r.visitor_id)),
+          h('td', { class: 'nowrap' }, langName(r.language)),
+          h('td', { class: 'file', title: r.filename || '' }, r.filename || '—'),
+          h('td', { class: 'num' }, fmtBytes(r.size_bytes)),
+          h('td', { class: 'num' }, r.audio_seconds ? fmtDur(r.audio_seconds) : '—'),
+          h('td', { class: 'num' }, fmtMs(r.duration_ms)),
+          h('td', {}, bad ? h('span', { class: 'pill err', title: 'HTTP ' + r.http_status }, ERR[r.error_kind] || r.error_kind || 'Failed')
+            : h('span', { class: 'pill ' + (r.translation_failed ? 'warn' : 'ok') }, r.translation_failed ? 'OK · translation issue' : 'OK')));
+      }
+
+      function renderFilter() {
+        const box = $('filter'); clear(box);
+        if (state.visitor) box.append(h('div', { class: 'chip' }, 'Visitor ' + shortId(state.visitor),
+          h('button', { type: 'button', onclick: () => { state.visitor = null; reload(); } }, 'Show all')));
+      }
+
+      function renderRequests(d, append) {
+        const box = $('requests');
+        if (!append) {
+          clear(box); state.rows = 0;
+          if (!d.requests.length) { box.append(h('p', { class: 'empty' }, state.visitor ? 'No requests from this visitor in this period.' : 'No transcriptions in this period yet.')); $('more').hidden = true; return; }
+          box.append(table(['Time', 'Visitor', 'Language', 'File', 'Size', 'Audio', 'Took', 'Result'], []));
+        }
+        const body = box.querySelector('tbody');
+        d.requests.forEach((r) => body.append(requestRow(r)));
+        state.rows += d.requests.length;
+        $('more').hidden = !d.has_more;
+      }
+
+      async function reload() {
+        if (state.busy) return; state.busy = true;
+        $('export').setAttribute('href', '/admin/export.csv?range=' + encodeURIComponent($('range').value));
+        try {
+          const d = await fetchStats(0);
+          renderBanners(d); renderKpis(d); renderQuota(d); renderChart(d);
+          renderBars('languages', d.languages, langName);
+          renderBars('errors', d.errors, (n) => ERR[n] || n, 'var(--danger)');
+          renderBars('devices', d.devices, (n) => n);
+          renderVisitors(d); renderFilter(); renderRequests(d, false);
+          $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString() + ' · keeping ' + d.retention_days + ' days of history';
+        } catch (e) {
+          if (e.message !== 'signed out') renderBanners(null, 'Could not load stats: ' + e.message);
+        } finally { state.busy = false; }
+      }
+
+      async function loadMore() {
+        const btn = $('more'); btn.disabled = true;
+        try { renderRequests(await fetchStats(state.rows), true); }
+        catch (e) { renderBanners(null, 'Could not load more: ' + e.message); }
+        finally { btn.disabled = false; }
+      }
+
+      function setAuto() {
+        clearInterval(state.timer);
+        if ($('auto').checked) state.timer = setInterval(() => { if (!document.hidden) reload(); }, 30000);
+      }
+
+      $('range').addEventListener('change', reload);
+      $('refresh').addEventListener('click', reload);
+      $('more').addEventListener('click', loadMore);
+      $('auto').addEventListener('change', setAuto);
+      reload();
+{% endraw %}
+    </script>
+  </body>
+</html>
